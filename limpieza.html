@@ -111,6 +111,11 @@
       border-radius: 0;
     }
 
+    input[type="file"] {
+      padding: 8px 0;
+      font-size: 0.92rem;
+    }
+
     select {
       appearance: none;
       -webkit-appearance: none;
@@ -161,6 +166,61 @@
     .mensaje.error { background: var(--rojo-fondo); color: var(--rojo); }
     .mensaje.aviso { background: #F8F1DE; color: var(--dorado-oscuro); }
 
+    /* Fotos del reporte */
+    .ayuda-fotos {
+      font-size: 0.85rem;
+      color: var(--gris);
+      margin-top: 4px;
+    }
+
+    .vista-fotos {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-top: 10px;
+    }
+
+    .vista-foto {
+      position: relative;
+    }
+
+    .vista-foto img {
+      width: 100%;
+      height: 110px;
+      object-fit: cover;
+      display: block;
+      background: var(--crema-oscuro);
+    }
+
+    .vista-foto button {
+      position: absolute;
+      top: 4px;
+      right: 4px;
+      background: rgba(21, 39, 29, 0.85);
+      color: var(--blanco);
+      border: none;
+      width: 26px;
+      height: 26px;
+      cursor: pointer;
+      font-size: 0.9rem;
+      line-height: 1;
+    }
+
+    .fotos-historial {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+      flex-wrap: wrap;
+    }
+
+    .fotos-historial img {
+      width: 84px;
+      height: 84px;
+      object-fit: cover;
+      display: block;
+      border: 1px solid var(--crema-oscuro);
+    }
+
     .historial { margin-top: 40px; }
     .historial h2 { font-size: 1.5rem; margin-bottom: 14px; }
 
@@ -199,6 +259,7 @@
 
     @media (max-width: 480px) {
       .fila { grid-template-columns: 1fr; }
+      .vista-fotos { grid-template-columns: repeat(2, 1fr); }
     }
   </style>
 </head>
@@ -270,6 +331,13 @@
         <textarea id="nota" maxlength="500"></textarea>
       </div>
 
+      <div>
+        <label for="fotos">Fotos (opcional, hasta 3)</label>
+        <input type="file" id="fotos" accept="image/*" multiple>
+        <p class="ayuda-fotos" id="aviso-fotos">Puede tomar la foto con la cámara o elegirla de la galería. Necesita internet para enviarlas.</p>
+        <div class="vista-fotos" id="vista-fotos"></div>
+      </div>
+
       <button type="submit" class="btn" id="boton-guardar">Guardar reporte</button>
       <div class="mensaje" id="mensaje" role="status" hidden></div>
     </form>
@@ -305,7 +373,7 @@
     } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
     /* =========================================================
-       FIREBASE
+       FIREBASE Y CLOUDINARY
        ========================================================= */
     const firebaseConfig = {
       apiKey: "AIzaSyB0ubNo_ojBiATkTB5RNMP_OZkOodmvQnM",
@@ -315,6 +383,12 @@
       messagingSenderId: "946760081226",
       appId: "1:946760081226:web:466a4d1be01425f272abb3"
     };
+
+    // La carpeta nelary/bitacora viene configurada en el preset
+    const CLOUD_NAME = "kyhdlu4q";
+    const UPLOAD_PRESET_BITACORA = "nelary_bitacora";
+    const MAX_FOTOS = 3;
+    const TAMANO_MAXIMO = 15 * 1024 * 1024; // 15 MB
 
     const app = initializeApp(firebaseConfig);
 
@@ -347,12 +421,16 @@
     const productoInput = document.getElementById("producto");
     const cantidadInput = document.getElementById("cantidad");
     const notaInput = document.getElementById("nota");
+    const fotosInput = document.getElementById("fotos");
+    const avisoFotos = document.getElementById("aviso-fotos");
+    const vistaFotos = document.getElementById("vista-fotos");
     const listaProductos = document.getElementById("lista-productos");
     const mensaje = document.getElementById("mensaje");
     const historial = document.getElementById("historial");
 
     let usuario = null;
     let productos = [];
+    let fotosElegidas = []; // archivos de imagen aún no enviados
 
     // Tiempo máximo de espera para la confirmación del servidor
     const TIEMPO_ESPERA_MS = 12000;
@@ -379,6 +457,11 @@
 
     function formatoFecha(ms) {
       return new Date(ms).toLocaleString("es-CR", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+    }
+
+    // Miniatura cuadrada de Cloudinary
+    function miniatura(url) {
+      return url.replace("/upload/", "/upload/c_fill,w_240,h_240,f_auto,q_auto/");
     }
 
     function mostrarMensaje(texto, tipo) {
@@ -477,6 +560,80 @@
     cabanaInput.addEventListener("change", actualizarSugerencias);
 
     /* =========================================================
+       FOTOS DEL REPORTE
+       ========================================================= */
+    function pintarFotos() {
+      vistaFotos.textContent = "";
+
+      fotosElegidas.forEach(function (archivo, i) {
+        const cuadro = document.createElement("div");
+        cuadro.className = "vista-foto";
+
+        const img = document.createElement("img");
+        img.src = URL.createObjectURL(archivo);
+        img.alt = "Foto " + (i + 1);
+
+        const quitar = document.createElement("button");
+        quitar.type = "button";
+        quitar.textContent = "×";
+        quitar.setAttribute("aria-label", "Quitar foto " + (i + 1));
+        quitar.addEventListener("click", function () {
+          fotosElegidas.splice(i, 1);
+          pintarFotos();
+        });
+
+        cuadro.append(img, quitar);
+        vistaFotos.appendChild(cuadro);
+      });
+
+      avisoFotos.textContent = fotosElegidas.length >= MAX_FOTOS
+        ? "Ya llegó al máximo de " + MAX_FOTOS + " fotos."
+        : "Puede tomar la foto con la cámara o elegirla de la galería. Necesita internet para enviarlas.";
+    }
+
+    fotosInput.addEventListener("change", function () {
+      const elegidas = Array.from(fotosInput.files);
+      fotosInput.value = "";
+
+      const espacio = MAX_FOTOS - fotosElegidas.length;
+      const validas = elegidas.filter(function (f) {
+        return f.type.indexOf("image/") === 0 && f.size <= TAMANO_MAXIMO;
+      });
+
+      if (validas.length < elegidas.length) {
+        mostrarMensaje("Algunos archivos no son fotos válidas o pesan más de 15 MB.", "error");
+      }
+      if (validas.length > espacio) {
+        mostrarMensaje("Solo se pueden agregar " + MAX_FOTOS + " fotos por reporte.", "error");
+      }
+
+      fotosElegidas = fotosElegidas.concat(validas.slice(0, Math.max(espacio, 0)));
+      pintarFotos();
+    });
+
+    async function subirFotos() {
+      const urls = [];
+      for (let k = 0; k < fotosElegidas.length; k++) {
+        botonGuardar.textContent = "Subiendo foto " + (k + 1) + " de " + fotosElegidas.length + "…";
+
+        const datos = new FormData();
+        datos.append("file", fotosElegidas[k]);
+        datos.append("upload_preset", UPLOAD_PRESET_BITACORA);
+
+        const respuesta = await fetch("https://api.cloudinary.com/v1_1/" + CLOUD_NAME + "/image/upload", {
+          method: "POST",
+          body: datos
+        });
+        const resultado = await respuesta.json();
+        if (!respuesta.ok) {
+          throw new Error((resultado.error && resultado.error.message) || "error " + respuesta.status);
+        }
+        urls.push(resultado.secure_url);
+      }
+      return urls;
+    }
+
+    /* =========================================================
        HISTORIAL DEL USUARIO
        ========================================================= */
     async function cargarHistorial() {
@@ -496,6 +653,7 @@
             producto: data.producto,
             cantidad: data.cantidad,
             nota: data.nota,
+            fotos: Array.isArray(data.fotos) ? data.fotos : [],
             pendiente: d.metadata.hasPendingWrites,
             ms: data.creadoEn && data.creadoEn.toMillis ? data.creadoEn.toMillis() : Date.now()
           };
@@ -517,41 +675,66 @@
         ? '<span class="pendiente">Pendiente de envío</span>'
         : esc(formatoFecha(i.ms));
 
+      const fotos = i.fotos.length
+        ? '<div class="fotos-historial">' + i.fotos.map(function (url) {
+            return '<a href="' + esc(url) + '" target="_blank" rel="noopener">' +
+              '<img src="' + esc(miniatura(url)) + '" alt="Foto del reporte"></a>';
+          }).join("") + "</div>"
+        : "";
+
       return '<article class="item">' +
         '<div class="item-top"><span>' + esc(i.cabana) + "</span><span>" + fecha + "</span></div>" +
         "<p><strong>" + esc(etiquetasTipo[i.tipo] || i.tipo) + "</strong> · " +
           esc(i.producto) + " × " + esc(i.cantidad) + "</p>" +
         (i.nota ? '<p class="nota">' + esc(i.nota) + "</p>" : "") +
+        fotos +
       "</article>";
     }
 
     /* =========================================================
        GUARDAR REPORTE
-       Espera la confirmación del servidor. Si no llega a tiempo,
-       el reporte queda en el teléfono y se envía solo después.
-       Si Firebase lo rechaza, muestra el motivo exacto.
+       1) Sube las fotos (si hay). Si no hay internet, avisa y
+          conserva los datos en el formulario.
+       2) Guarda el reporte y espera la confirmación del servidor.
+          Si no llega a tiempo, el reporte queda en el teléfono y
+          se envía solo después.
        ========================================================= */
     formBitacora.addEventListener("submit", async function (e) {
       e.preventDefault();
       if (!usuario) return;
 
-      const datos = {
-        cabana: cabanaInput.value,
-        tipo: tipoInput.value,
-        producto: productoInput.value.trim(),
-        cantidad: Number(cantidadInput.value),
-        nota: notaInput.value.trim(),
-        creadoPor: usuario.uid,
-        creadoEn: serverTimestamp()
-      };
-
       const textoBoton = botonGuardar.textContent;
       botonGuardar.disabled = true;
       botonGuardar.textContent = "Guardando…";
 
-      const referencia = doc(collection(db, "bitacora"));
-
       try {
+        let urlsFotos = [];
+        if (fotosElegidas.length) {
+          try {
+            urlsFotos = await subirFotos();
+          } catch (error) {
+            console.error(error);
+            mostrarMensaje(
+              "No se pudieron subir las fotos. Revise la conexión e intente de nuevo. Sus datos siguen en el formulario.",
+              "error"
+            );
+            return;
+          }
+        }
+
+        const datos = {
+          cabana: cabanaInput.value,
+          tipo: tipoInput.value,
+          producto: productoInput.value.trim(),
+          cantidad: Number(cantidadInput.value),
+          nota: notaInput.value.trim(),
+          fotos: urlsFotos,
+          creadoPor: usuario.uid,
+          creadoEn: serverTimestamp()
+        };
+
+        const referencia = doc(collection(db, "bitacora"));
+
         const confirmado = await Promise.race([
           setDoc(referencia, datos).then(function () { return true; }),
           new Promise(function (resolver) {
@@ -569,6 +752,8 @@
         }
 
         formBitacora.reset();
+        fotosElegidas = [];
+        pintarFotos();
         tipoInput.value = "consumo";
         actualizarSugerencias();
         cargarHistorial();
