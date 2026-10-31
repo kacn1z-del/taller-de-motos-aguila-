@@ -143,6 +143,33 @@
       padding: 28px 22px 60px;
     }
 
+    /* Pestañas */
+    .tabs {
+      display: flex;
+      border-bottom: 1px solid var(--crema-oscuro);
+      margin-bottom: 26px;
+      gap: 4px;
+    }
+
+    .tab {
+      background: none;
+      border: none;
+      padding: 12px 18px;
+      font-size: 0.72rem;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: var(--gris);
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+    }
+
+    .tab.activa {
+      color: var(--verde);
+      border-bottom-color: var(--dorado);
+      font-weight: 500;
+    }
+
     .barra {
       display: flex;
       justify-content: space-between;
@@ -161,6 +188,19 @@
       border-bottom: 1px solid var(--dorado);
       cursor: pointer;
     }
+
+    .btn-linea {
+      background: transparent;
+      color: var(--verde);
+      border: 1px solid var(--verde);
+      padding: 10px 14px;
+      font-size: 0.68rem;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      cursor: pointer;
+    }
+
+    .btn-linea:hover { background: var(--crema); }
 
     .tarjeta {
       background: var(--blanco);
@@ -183,6 +223,11 @@
       letter-spacing: 2px;
       text-transform: uppercase;
       color: var(--dorado-oscuro);
+    }
+
+    .fecha-bit {
+      font-size: 0.75rem;
+      color: var(--gris);
     }
 
     .estado {
@@ -211,6 +256,21 @@
       margin-top: 8px;
       padding-left: 12px;
       border-left: 2px solid var(--crema-oscuro);
+    }
+
+    .fotos-bit {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 12px;
+    }
+
+    .fotos-bit img {
+      width: 96px;
+      height: 96px;
+      object-fit: cover;
+      display: block;
+      border: 1px solid var(--crema-oscuro);
     }
 
     .acciones {
@@ -252,6 +312,11 @@
     .vacio.error { color: var(--rojo); }
 
     [hidden] { display: none !important; }
+
+    @media (max-width: 480px) {
+      .tab { padding: 12px 10px; letter-spacing: 1px; }
+      .fotos-bit img { width: 84px; height: 84px; }
+    }
   </style>
 </head>
 <body>
@@ -284,17 +349,51 @@
 
   <!-- PANEL -->
   <main class="panel" id="pantalla-panel" hidden>
-    <div class="barra">
-      <h1>Solicitudes</h1>
-      <select id="filtro" aria-label="Filtrar por estado">
-        <option value="nueva">Nuevas</option>
-        <option value="confirmada">Confirmadas</option>
-        <option value="rechazada">Rechazadas</option>
-        <option value="cancelada">Canceladas</option>
-        <option value="todas">Todas</option>
-      </select>
-    </div>
-    <div id="lista"></div>
+
+    <nav class="tabs" role="tablist">
+      <button type="button" class="tab activa" id="tab-solicitudes" role="tab" aria-selected="true">Solicitudes</button>
+      <button type="button" class="tab" id="tab-bitacora" role="tab" aria-selected="false">Bitácora de limpieza</button>
+    </nav>
+
+    <!-- SOLICITUDES -->
+    <section id="vista-solicitudes">
+      <div class="barra">
+        <h1>Solicitudes</h1>
+        <select id="filtro" aria-label="Filtrar por estado">
+          <option value="nueva">Nuevas</option>
+          <option value="confirmada">Confirmadas</option>
+          <option value="rechazada">Rechazadas</option>
+          <option value="cancelada">Canceladas</option>
+          <option value="todas">Todas</option>
+        </select>
+      </div>
+      <div id="lista"></div>
+    </section>
+
+    <!-- BITÁCORA -->
+    <section id="vista-bitacora" hidden>
+      <div class="barra">
+        <h1>Bitácora</h1>
+        <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:center;">
+          <select id="filtro-cabana" aria-label="Filtrar por cabaña">
+            <option value="">Todas las cabañas</option>
+            <option value="Cabaña Grande">Cabaña Grande</option>
+            <option value="Cabina Pequeña">Cabina Pequeña</option>
+          </select>
+          <select id="filtro-tipo" aria-label="Filtrar por tipo">
+            <option value="">Todos los tipos</option>
+            <option value="consumo">Consumo / uso</option>
+            <option value="reposicion">Necesita reposición</option>
+            <option value="faltante">Faltante</option>
+            <option value="dano">Daño</option>
+            <option value="extravio">Extraviado</option>
+          </select>
+          <button type="button" class="btn-linea" id="btn-actualizar-bit">Actualizar</button>
+        </div>
+      </div>
+      <div id="lista-bitacora"></div>
+    </section>
+
   </main>
 
   <script type="module">
@@ -307,6 +406,7 @@
       query,
       where,
       orderBy,
+      limit,
       updateDoc,
       writeBatch,
       serverTimestamp
@@ -343,10 +443,20 @@
     const formLogin = document.getElementById("form-login");
     const botonLogin = document.getElementById("boton-login");
     const errorLogin = document.getElementById("error-login");
+    const tabSolicitudes = document.getElementById("tab-solicitudes");
+    const tabBitacora = document.getElementById("tab-bitacora");
+    const vistaSolicitudes = document.getElementById("vista-solicitudes");
+    const vistaBitacora = document.getElementById("vista-bitacora");
     const filtro = document.getElementById("filtro");
     const lista = document.getElementById("lista");
+    const filtroCabana = document.getElementById("filtro-cabana");
+    const filtroTipo = document.getElementById("filtro-tipo");
+    const btnActualizarBit = document.getElementById("btn-actualizar-bit");
+    const listaBitacora = document.getElementById("lista-bitacora");
 
     let solicitudes = [];
+    let reportes = [];
+    let nombresStaff = {};
 
     /* =========================================================
        UTILIDADES
@@ -391,11 +501,24 @@
       return String(texto || "").replace(/\D/g, "");
     }
 
+    // Miniatura cuadrada de Cloudinary
+    function miniatura(url) {
+      return url.replace("/upload/", "/upload/c_fill,w_240,h_240,f_auto,q_auto/");
+    }
+
     const etiquetas = {
       nueva: "Nueva",
       confirmada: "Confirmada",
       rechazada: "Rechazada",
       cancelada: "Cancelada"
+    };
+
+    const etiquetasTipo = {
+      consumo: "Consumo / uso",
+      reposicion: "Necesita reposición",
+      faltante: "Faltante",
+      dano: "Daño",
+      extravio: "Extraviado"
     };
 
     /* =========================================================
@@ -428,17 +551,40 @@
         pantallaLogin.hidden = true;
         pantallaPanel.hidden = false;
         btnSalir.hidden = false;
-        cargarSolicitudes();
+        mostrarVista("solicitudes");
       } else {
         pantallaPanel.hidden = true;
         btnSalir.hidden = true;
         pantallaLogin.hidden = false;
         solicitudes = [];
+        reportes = [];
       }
     });
 
     /* =========================================================
-       CARGAR Y MOSTRAR SOLICITUDES
+       PESTAÑAS
+       ========================================================= */
+    function mostrarVista(nombre) {
+      const esSolicitudes = nombre === "solicitudes";
+      tabSolicitudes.classList.toggle("activa", esSolicitudes);
+      tabBitacora.classList.toggle("activa", !esSolicitudes);
+      tabSolicitudes.setAttribute("aria-selected", String(esSolicitudes));
+      tabBitacora.setAttribute("aria-selected", String(!esSolicitudes));
+      vistaSolicitudes.hidden = !esSolicitudes;
+      vistaBitacora.hidden = esSolicitudes;
+
+      if (esSolicitudes) {
+        cargarSolicitudes();
+      } else {
+        cargarBitacora();
+      }
+    }
+
+    tabSolicitudes.addEventListener("click", function () { mostrarVista("solicitudes"); });
+    tabBitacora.addEventListener("click", function () { mostrarVista("bitacora"); });
+
+    /* =========================================================
+       SOLICITUDES
        ========================================================= */
     async function cargarSolicitudes() {
       lista.innerHTML = '<p class="vacio">Cargando…</p>';
@@ -508,7 +654,80 @@
     filtro.addEventListener("change", render);
 
     /* =========================================================
-       ACCIONES
+       BITÁCORA DE LIMPIEZA (solo lectura)
+       ========================================================= */
+    async function cargarBitacora() {
+      listaBitacora.innerHTML = '<p class="vacio">Cargando…</p>';
+      try {
+        const [repSnap, staffSnap] = await Promise.all([
+          getDocs(query(collection(db, "bitacora"), orderBy("creadoEn", "desc"), limit(100))),
+          getDocs(collection(db, "staff"))
+        ]);
+
+        nombresStaff = {};
+        staffSnap.forEach(function (d) {
+          nombresStaff[d.id] = d.data().nombre || "Sin nombre";
+        });
+
+        reportes = repSnap.docs.map(function (d) {
+          return Object.assign({ id: d.id }, d.data());
+        });
+
+        renderBitacora();
+      } catch (error) {
+        console.error(error);
+        listaBitacora.innerHTML = '<p class="vacio error">No pudimos cargar la bitácora. ' + esc(error.code || "") + "</p>";
+      }
+    }
+
+    function tarjetaBitacora(r) {
+      const ms = r.creadoEn && r.creadoEn.toMillis ? r.creadoEn.toMillis() : null;
+      const fecha = ms
+        ? new Date(ms).toLocaleString("es-CR", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })
+        : "";
+      const quien = nombresStaff[r.creadoPor] || "Usuario no identificado";
+      const nota = r.nota ? '<p class="notas">' + esc(r.nota) + "</p>" : "";
+      const fotos = Array.isArray(r.fotos) && r.fotos.length
+        ? '<div class="fotos-bit">' + r.fotos.map(function (url) {
+            return '<a href="' + esc(url) + '" target="_blank" rel="noopener">' +
+              '<img src="' + esc(miniatura(url)) + '" alt="Foto del reporte"></a>';
+          }).join("") + "</div>"
+        : "";
+
+      return '<article class="tarjeta">' +
+        '<div class="t-cab">' +
+          '<span class="cab">' + esc(r.cabana) + "</span>" +
+          '<span class="fecha-bit">' + esc(fecha) + "</span>" +
+        "</div>" +
+        "<h3>" + esc(etiquetasTipo[r.tipo] || r.tipo) + " · " + esc(r.producto) + " × " + esc(r.cantidad) + "</h3>" +
+        '<p class="contacto">Reportó: ' + esc(quien) + "</p>" +
+        nota +
+        fotos +
+      "</article>";
+    }
+
+    function renderBitacora() {
+      const cabana = filtroCabana.value;
+      const tipo = filtroTipo.value;
+
+      const visibles = reportes.filter(function (r) {
+        return (!cabana || r.cabana === cabana) && (!tipo || r.tipo === tipo);
+      });
+
+      if (visibles.length === 0) {
+        listaBitacora.innerHTML = '<p class="vacio">No hay reportes con estos filtros.</p>';
+        return;
+      }
+
+      listaBitacora.innerHTML = visibles.map(tarjetaBitacora).join("");
+    }
+
+    filtroCabana.addEventListener("change", renderBitacora);
+    filtroTipo.addEventListener("change", renderBitacora);
+    btnActualizarBit.addEventListener("click", cargarBitacora);
+
+    /* =========================================================
+       ACCIONES DE SOLICITUDES
        ========================================================= */
     lista.addEventListener("click", async function (e) {
       const boton = e.target.closest("button[data-accion]");
